@@ -11,17 +11,23 @@ Uma instituição financeira digital precisa escolher, em canais digitais, a mel
 - **Contexto**: segmento do cliente (faixa etária × posse de crédito), sem atributos sensíveis.
 - **Avaliação**: *offline replay* (Li et al., 2011) sobre o log histórico. Como a política de coleta não foi aleatória e suas propensões são desconhecidas, os resultados são comparativos e sujeitos a viés de seleção; não representam uma estimativa causal de uplift.
 
-### Resultados (replay offline, 41.176 eventos após limpeza)
+### Resultados (replay offline com validação cruzada de 5 folds, 41.176 eventos)
 
-| Política | Conversão | Eventos casados | Taxa de casamento | Uplift vs. baseline |
+| Política | Conversão (média ± desvio) | Eventos casados por fold | Taxa de casamento (média ± desvio) | Uplift vs. baseline |
 |---|---:|---:|---:|---:|
-| Melhor braço histórico (referência retrospectiva) | 14,74% | 26.135 | 63,47% | +181,7% |
-| **Thompson Sampling** | **14,68%** | **26.054** | **63,27%** | **+180,7%** |
-| Epsilon-Greedy (`epsilon=0,1`) | 14,45% | 25.508 | 61,95% | +176,2% |
-| Thompson Sampling contextual | 14,05% | 25.475 | 61,87% | +168,4% |
-| Baseline - regra fixa (`telephone`) | 5,23% | 15.041 | 36,53% | - |
+| Melhor braço histórico (referência retrospectiva) | 14,74% ± 0,41% | 5.227,0 | 63,47% ± 0,44% | +181,7% |
+| **Thompson Sampling** | **14,74% ± 0,41%** | **5.227,0** | **63,47% ± 0,44%** | **+181,7%** |
+| Epsilon-Greedy (`epsilon=0,1`) | 14,49% ± 0,44% | 5.121,2 | 62,19% ± 0,49% | +177,0% |
+| Thompson Sampling contextual | 13,77% ± 0,72% | 4.804,6 | 58,34% ± 4,59% | +163,2% |
+| Baseline - regra fixa (`telephone`) | 5,23% ± 0,28% | 3.008,2 | 36,53% ± 0,44% | - |
 
 O Thompson Sampling (prior `Beta(1,1)`, uniforme e não-informativa - documentada em [src/bandits.py](src/bandits.py)) aprende o melhor braço sem conhecê-lo de antemão e praticamente empata com a referência retrospectiva. O uplift observado não deve ser interpretado como efeito causal, pois canal e período da campanha podem estar confundidos no log.
+
+### Validação cruzada
+
+O treinamento usa validação cruzada com `KFold` de 5 partes, embaralhamento reproduzível e seed 42. Em cada rodada, uma política nova é treinada por replay em 4 partes e avaliada, sem atualizar seu estado, na parte restante. Ao final, são calculadas as médias de conversão, taxa de casamento, eventos casados e conversões, além dos desvios-padrão das taxas de conversão e casamento.
+
+Essa técnica verifica se as políticas mantêm desempenho em diferentes partes dos dados e é especialmente útil quando há poucos dados ou quando se quer avaliar a capacidade de generalização. O melhor braço histórico é calculado somente com os 4 folds de treino de cada rodada, evitando vazamento da validação. Após os 5 folds, uma nova política é treinada com todos os dados e salva em `models/` para uso pela API.
 
 ## Base de dados (Kaggle)
 
@@ -110,8 +116,8 @@ A observabilidade seria feita com **CloudWatch** (logs, métricas de conversão 
 
 `python -m src.train` registra no **MLflow** (backend SQLite local, `mlflow.db`), para cada política:
 
-- **Parâmetros**: tipo de política, braços, `epsilon`, priors (`alpha`, `beta`), seed, dataset e nº de eventos.
-- **Métricas**: taxa de conversão no replay, taxa de casamento, eventos casados e conversões.
+- **Parâmetros**: tipo de política, braços, `epsilon`, priors (`alpha`, `beta`), seed, dataset, nº de eventos e 5 folds de validação cruzada.
+- **Métricas**: resultados de cada fold, médias de taxa de conversão, taxa de casamento, eventos casados e conversões, e desvios-padrão das taxas.
 - **Artefatos**: estado JSON das posteriores de cada política (usado pela API - o mesmo artefato treinado é o que serve).
 
 ## Governança e uso responsável de dados

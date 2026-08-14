@@ -42,3 +42,16 @@ def test_replay_calcula_metricas_de_casamento():
     assert metricas["conversions"] == 2
     assert metricas["conversion_rate"] == 1
     assert metricas["match_rate"] == pytest.approx(2 / 3)
+
+
+def test_replay_de_validacao_nao_atualiza_politica():
+    eventos = pd.DataFrame(
+        {"arm": ["a"], "converted": [1], "segment": ["s"]}
+    )
+    policy = BaselinePolicy(["a"], fixed_arm="a")
+
+    metricas = replay_evaluation(policy, eventos, update_policy=False)
+
+    assert metricas["conversions"] == 1
+    assert policy.pulls["__global__"]["a"] == 0
+    assert policy.rewards["__global__"]["a"] == 0

@@ -155,7 +155,7 @@ def load_policy(path: str | Path) -> BanditPolicy:
 
 
 def replay_evaluation(policy: BanditPolicy, df, arm_col="arm", reward_col="converted",
-                      context_col="segment") -> dict:
+                      context_col="segment", update_policy=True) -> dict:
     """Avaliação por replay offline (Li et al., 2011).
 
     Percorre os eventos do log; sempre que a política escolhe o mesmo braço que
@@ -171,7 +171,8 @@ def replay_evaluation(policy: BanditPolicy, df, arm_col="arm", reward_col="conve
         logged_arm = getattr(row, arm_col)
         if chosen == logged_arm:
             reward = int(getattr(row, reward_col))
-            policy.update(chosen, reward, context)
+            if update_policy:
+                policy.update(chosen, reward, context)
             matched += 1
             conversions += reward
             history.append(conversions / matched)
