@@ -23,6 +23,7 @@ from src.data_prep import PROCESSED_DIR, prepare
 
 ROOT = Path(__file__).resolve().parents[1]
 MODELS_DIR = ROOT / "models"
+REPORTS_DIR = ROOT / "reports"
 EXPERIMENT_NAME = "datathon-bandit-ofertas"
 SEED = 42
 N_SPLITS = 5
@@ -137,6 +138,8 @@ def run_experiments() -> pd.DataFrame:
     summary["uplift_vs_baseline_pct"] = (
         100 * (summary["conversion_rate"] - baseline_rate) / baseline_rate
     ).round(1)
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    summary.to_csv(REPORTS_DIR / "experiment_summary.csv", index=False)
     return summary
 
 

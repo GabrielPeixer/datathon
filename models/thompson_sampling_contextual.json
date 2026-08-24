@@ -1,0 +1,78 @@
+{
+  "policy": "ThompsonSampling",
+  "arms": [
+    "cellular",
+    "telephone"
+  ],
+  "contextual": true,
+  "pulls": {
+    "meia_idade_sem_credito": {
+      "cellular": 2550,
+      "telephone": 68
+    },
+    "adulto_com_credito": {
+      "cellular": 4017,
+      "telephone": 683
+    },
+    "adulto_sem_credito": {
+      "cellular": 4781,
+      "telephone": 199
+    },
+    "meia_idade_com_credito": {
+      "cellular": 3807,
+      "telephone": 82
+    },
+    "jovem_com_credito": {
+      "cellular": 2620,
+      "telephone": 107
+    },
+    "jovem_sem_credito": {
+      "cellular": 993,
+      "telephone": 159
+    },
+    "senior_sem_credito": {
+      "cellular": 232,
+      "telephone": 12
+    },
+    "senior_com_credito": {
+      "cellular": 220,
+      "telephone": 22
+    }
+  },
+  "rewards": {
+    "meia_idade_sem_credito": {
+      "cellular": 314,
+      "telephone": 0
+    },
+    "adulto_com_credito": {
+      "cellular": 546,
+      "telephone": 51
+    },
+    "adulto_sem_credito": {
+      "cellular": 625,
+      "telephone": 8
+    },
+    "meia_idade_com_credito": {
+      "cellular": 516,
+      "telephone": 1
+    },
+    "jovem_com_credito": {
+      "cellular": 558,
+      "telephone": 6
+    },
+    "jovem_sem_credito": {
+      "cellular": 186,
+      "telephone": 20
+    },
+    "senior_sem_credito": {
+      "cellular": 110,
+      "telephone": 5
+    },
+    "senior_com_credito": {
+      "cellular": 94,
+      "telephone": 9
+    }
+  },
+  "prior_alpha": 1.0,
+  "prior_beta": 1.0
+}

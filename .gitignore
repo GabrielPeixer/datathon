@@ -10,3 +10,4 @@ mlflow.db
 data/raw/*
 data/processed/*.csv
 models/*.json
+!models/thompson_sampling_contextual.json

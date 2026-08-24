@@ -23,6 +23,8 @@ Uma instituição financeira digital precisa escolher, em canais digitais, a mel
 
 O Thompson Sampling (prior `Beta(1,1)`, uniforme e não-informativa - documentada em [src/bandits.py](src/bandits.py)) aprende o melhor braço sem conhecê-lo de antemão e praticamente empata com a referência retrospectiva. O uplift observado não deve ser interpretado como efeito causal, pois canal e período da campanha podem estar confundidos no log.
 
+Os valores completos e reproduzíveis desta tabela estão versionados em [`reports/experiment_summary.csv`](reports/experiment_summary.csv). O arquivo é regenerado por `python -m src.train` a partir dos mesmos resultados registrados no MLflow.
+
 ### Validação cruzada
 
 O treinamento usa validação cruzada com `KFold` de 5 partes, embaralhamento reproduzível e seed 42. Em cada rodada, uma política nova é treinada por replay em 4 partes e avaliada, sem atualizar seu estado, na parte restante. Ao final, são calculadas as médias de conversão, taxa de casamento, eventos casados e conversões, além dos desvios-padrão das taxas de conversão e casamento.
@@ -50,6 +52,8 @@ Essa técnica verifica se as políticas mantêm desempenho em diferentes partes 
 │   ├── train.py                 # Comparação de políticas com tracking no MLflow
 │   └── api.py                   # Etapa 5: serviço FastAPI de recomendação
 ├── models/                      # Estados (posteriores) das políticas treinadas
+├── reports/
+│   └── experiment_summary.csv  # Evidência reproduzível das métricas do MLflow
 ├── data/                        # raw/ e processed/ (gerados pelo pipeline)
 ├── requirements.txt
 ├── tests/                       # Testes de dados, políticas, serialização e API
@@ -59,6 +63,21 @@ Essa técnica verifica se as políticas mantêm desempenho em diferentes partes 
 ## Como executar localmente
 
 Pré-requisito: Python 3.11+.
+
+### Demonstração imediata da API
+
+O artefato `models/thompson_sampling_contextual.json` usado pela API está versionado. Assim, após instalar as dependências, a recomendação pode ser demonstrada sem refazer o treinamento:
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate          # Windows  (Linux/mac: source .venv/bin/activate)
+pip install -r requirements.txt
+uvicorn src.api:app --reload
+```
+
+Acesse `http://127.0.0.1:8000/docs` ou consulte `GET /health`, que deve retornar `{"status":"ok","policy_loaded":true}`.
+
+### Reprodução completa do pipeline
 
 ```bash
 # 1. Ambiente
@@ -119,6 +138,21 @@ A observabilidade seria feita com **CloudWatch** (logs, métricas de conversão 
 - **Parâmetros**: tipo de política, braços, `epsilon`, priors (`alpha`, `beta`), seed, dataset, nº de eventos e 5 folds de validação cruzada.
 - **Métricas**: resultados de cada fold, médias de taxa de conversão, taxa de casamento, eventos casados e conversões, e desvios-padrão das taxas.
 - **Artefatos**: estado JSON das posteriores de cada política (usado pela API - o mesmo artefato treinado é o que serve).
+
+Além do backend local, o treinamento exporta [`reports/experiment_summary.csv`](reports/experiment_summary.csv), permitindo que a banca audite as métricas sem depender do banco SQLite local. O estado contextual servido pela API é mantido em [`models/thompson_sampling_contextual.json`](models/thompson_sampling_contextual.json), enquanto os demais estados podem ser regenerados pelo treinamento.
+
+## Cobertura dos entregáveis (Etapas 0-7)
+
+| Etapa | Evidência |
+|---|---|
+| 0 - Organização | `README.md`, `requirements.txt` e código modular em `src/` |
+| 1 - Kaggle e EDA | Link da base e notebook `notebooks/01_eda_e_bandits.ipynb` executado |
+| 2 - Preparação | `src/data_prep.py` e manifesto SHA-256 em `data/processed/data_manifest.json` |
+| 3 - Baseline e adaptativos | Thompson Sampling, Epsilon-Greedy e baseline em `src/bandits.py` |
+| 4 - Avaliação e Golden Set | Métricas versionadas e cinco casos documentados acima |
+| 5 - Serviço demonstrável | FastAPI em `src/api.py` e artefato contextual versionado |
+| 6 - Arquitetura em nuvem | Arquitetura AWS descrita na seção anterior |
+| 7 - MLOps | Tracking MLflow em `src/train.py` e resumo reproduzível em `reports/` |
 
 ## Governança e uso responsável de dados
 

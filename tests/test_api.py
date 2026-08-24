@@ -2,10 +2,18 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src import api
-from src.bandits import ThompsonSampling
+from src.bandits import ThompsonSampling, load_policy
 
 
 client = TestClient(api.app)
+
+
+def test_artefato_versionado_da_api_pode_ser_carregado():
+    politica = load_policy(api.POLICY_PATH)
+
+    assert isinstance(politica, ThompsonSampling)
+    assert politica.contextual is True
+    assert set(politica.arms) == {"cellular", "telephone"}
 
 
 def test_health_reflete_disponibilidade_do_modelo(monkeypatch, tmp_path):
