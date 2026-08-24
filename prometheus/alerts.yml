@@ -1,0 +1,38 @@
+groups:
+  - name: datathon-alerts
+    rules:
+      - alert: DatathonAPIDown
+        expr: up{job="datathon-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "API do Datathon indisponível"
+          description: "O alvo datathon-api não está respondendo ao scrape do Prometheus."
+
+      - alert: DatathonHighLatency
+        expr: histogram_quantile(0.95, rate(datathon_http_request_duration_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Latência alta da API"
+          description: "O percentil 95 de latência da API está acima de 2 segundos."
+
+      - alert: DatathonPolicyDegraded
+        expr: datathon_policy_loaded == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Política de recomendação indisponível"
+          description: "A política contextual não foi carregada corretamente." 
+
+      - alert: DatathonLowRecommendationRate
+        expr: rate(datathon_recommendations_total[5m]) == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Sem recomendações processadas"
+          description: "A API não está recebendo ou processando recomendações no período recente."

@@ -64,3 +64,14 @@ def test_recomendacao_retorna_oferta_e_evidencias(monkeypatch):
     assert corpo["recommended_arm"] == "cellular"
     assert corpo["posterior"]["cellular"]["mean_conversion"] > corpo["posterior"]["telephone"]["mean_conversion"]
     assert "revisão humana" in corpo["human_in_the_loop"]
+
+
+def test_metrics_endpoint_expoe_prometheus_metrics():
+    resposta = client.get("/metrics")
+
+    assert resposta.status_code == 200
+    assert resposta.headers["content-type"].startswith("text/plain")
+    corpo = resposta.text
+    assert "datathon_http_requests_total" in corpo
+    assert "datathon_recommendations_total" in corpo
+    assert "datathon_policy_loaded" in corpo

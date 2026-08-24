@@ -8,17 +8,48 @@ Depois abra http://127.0.0.1:8000/docs
 """
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import pandas as pd
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, Response
 from pydantic import BaseModel, Field
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
 
 from src.bandits import ThompsonSampling, load_policy
 from src.data_prep import build_segment as build_segment_frame
 
 ROOT = Path(__file__).resolve().parents[1]
 POLICY_PATH = ROOT / "models" / "thompson_sampling_contextual.json"
+
+REQUEST_COUNTER = Counter(
+    "datathon_http_requests_total",
+    "Total de requisições HTTP recebidas pela API.",
+    labelnames=("method", "endpoint", "status"),
+)
+REQUEST_LATENCY = Histogram(
+    "datathon_http_request_duration_seconds",
+    "Tempo de resposta de cada requisição HTTP em segundos.",
+    labelnames=("method", "endpoint"),
+)
+RECOMMENDATION_COUNTER = Counter(
+    "datathon_recommendations_total",
+    "Total de recomendações geradas por braço e segmento.",
+    labelnames=("arm", "segment"),
+)
+RECOMMENDATION_LATENCY = Histogram(
+    "datathon_recommendation_latency_seconds",
+    "Tempo de processamento da recomendação em segundos.",
+)
+POLICY_LOADED = Gauge(
+    "datathon_policy_loaded",
+    "Indicador se a política contextual foi carregada corretamente.",
+)
+POLICY_EXPECTED_RATE = Gauge(
+    "datathon_policy_expected_conversion_rate",
+    "Taxa de conversão esperada por braço e segmento.",
+    labelnames=("arm", "segment"),
+)
 
 app = FastAPI(
     title="Datathon - Recomendação Adaptativa de Ofertas",
@@ -27,6 +58,23 @@ app = FastAPI(
 )
 
 _policy: ThompsonSampling | None = None
+
+
+@app.middleware("http")
+async def prometheus_middleware(request: Request, call_next):
+    started_at = time.perf_counter()
+    response = await call_next(request)
+    elapsed = time.perf_counter() - started_at
+    endpoint = request.url.path or "/"
+    REQUEST_COUNTER.labels(request.method, endpoint, str(response.status_code)).inc()
+    REQUEST_LATENCY.labels(request.method, endpoint).observe(elapsed)
+    if request.url.path == "/health":
+        try:
+            get_policy()
+            POLICY_LOADED.set(1)
+        except (HTTPException, OSError, ValueError, KeyError):
+            POLICY_LOADED.set(0)
+    return response
 
 
 def get_policy() -> ThompsonSampling:
@@ -66,13 +114,21 @@ def build_segment(client: Client) -> str:
 def health() -> dict:
     try:
         get_policy()
+        POLICY_LOADED.set(1)
+        return {"status": "ok", "policy_loaded": True}
     except (HTTPException, OSError, ValueError, KeyError):
+        POLICY_LOADED.set(0)
         return {"status": "degraded", "policy_loaded": False}
-    return {"status": "ok", "policy_loaded": True}
+
+
+@app.get("/metrics")
+def metrics() -> Response:
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.post("/recommend", response_model=Recommendation)
 def recommend(client: Client) -> Recommendation:
+    start = time.perf_counter()
     policy = get_policy()
     segment = build_segment(client)
     arm = policy.select_arm(segment)
@@ -80,11 +136,16 @@ def recommend(client: Client) -> Recommendation:
     posterior = {}
     for a in policy.arms:
         alpha, beta = policy.posterior(a, segment)
+        mean_conversion = alpha / (alpha + beta)
         posterior[a] = {
             "alpha": round(alpha, 1),
             "beta": round(beta, 1),
-            "mean_conversion": round(alpha / (alpha + beta), 4),
+            "mean_conversion": round(mean_conversion, 4),
         }
+        POLICY_EXPECTED_RATE.labels(a, segment).set(mean_conversion)
+
+    RECOMMENDATION_COUNTER.labels(arm, segment).inc()
+    RECOMMENDATION_LATENCY.observe(time.perf_counter() - start)
 
     return Recommendation(
         segment=segment,

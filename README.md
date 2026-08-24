@@ -141,6 +141,34 @@ A observabilidade seria feita com **CloudWatch** (logs, métricas de conversão 
 
 Além do backend local, o treinamento exporta [`reports/experiment_summary.csv`](reports/experiment_summary.csv), permitindo que a banca audite as métricas sem depender do banco SQLite local. O estado contextual servido pela API é mantido em [`models/thompson_sampling_contextual.json`](models/thompson_sampling_contextual.json), enquanto os demais estados podem ser regenerados pelo treinamento.
 
+## Monitoramento com Prometheus
+
+A API expõe métricas em `/metrics` e inclui os seguintes sinais:
+
+- `datathon_http_requests_total`
+- `datathon_http_request_duration_seconds`
+- `datathon_recommendations_total`
+- `datathon_recommendation_latency_seconds`
+- `datathon_policy_loaded`
+- `datathon_policy_expected_conversion_rate`
+
+Arquivo de config: [`prometheus/prometheus.yml`](prometheus/prometheus.yml)
+Arquivo de alertas: [`prometheus/alerts.yml`](prometheus/alerts.yml)
+
+```bash
+# 1) subir a API
+uvicorn src.api:app --host 0.0.0.0 --port 8000
+
+# 2) rodar o Prometheus localmente
+docker run -d --name prometheus \
+  -p 9090:9090 \
+  -v "${PWD}/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml" \
+  -v "${PWD}/prometheus/alerts.yml:/etc/prometheus/alerts/alerts.yml" \
+  prom/prometheus
+```
+
+Acesse: `http://localhost:9090` e valide os alertas e targets.
+
 ## Cobertura dos entregáveis (Etapas 0-7)
 
 | Etapa | Evidência |
@@ -152,7 +180,7 @@ Além do backend local, o treinamento exporta [`reports/experiment_summary.csv`]
 | 4 - Avaliação e Golden Set | Métricas versionadas e cinco casos documentados acima |
 | 5 - Serviço demonstrável | FastAPI em `src/api.py` e artefato contextual versionado |
 | 6 - Arquitetura em nuvem | Arquitetura AWS descrita na seção anterior |
-| 7 - MLOps | Tracking MLflow em `src/train.py` e resumo reproduzível em `reports/` |
+| 7 - MLOps | Tracking MLflow em `src/train.py`, resumo em `reports/` e Prometheus em `prometheus/` |
 
 ## Governança e uso responsável de dados
 
