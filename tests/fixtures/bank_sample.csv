@@ -1,0 +1,13 @@
+age;job;marital;education;default;housing;loan;contact;duration;y
+28;student;single;high.school;no;no;no;cellular;120;yes
+29;student;single;high.school;no;no;no;telephone;80;no
+32;admin.;married;university.degree;no;yes;no;cellular;200;yes
+34;technician;married;professional.course;no;yes;yes;telephone;90;no
+41;blue-collar;married;basic.9y;no;yes;no;cellular;150;no
+43;services;divorced;high.school;no;no;yes;telephone;70;no
+50;management;married;university.degree;no;yes;yes;cellular;180;yes
+52;admin.;married;university.degree;no;no;no;telephone;60;no
+61;retired;married;basic.4y;no;no;no;cellular;240;yes
+63;retired;married;basic.4y;no;yes;no;telephone;50;no
+36;technician;single;professional.course;no;yes;no;cellular;110;yes
+39;blue-collar;married;basic.9y;no;no;no;telephone;40;no

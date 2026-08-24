@@ -2,7 +2,7 @@ import json
 
 import pandas as pd
 
-from src import data_prep
+from src import data_prep, feature_store
 
 
 def test_preparo_remove_apenas_duplicatas_reais_e_duration(tmp_path, monkeypatch):
@@ -17,6 +17,7 @@ def test_preparo_remove_apenas_duplicatas_reais_e_duration(tmp_path, monkeypatch
     bruto.to_csv(caminho_bruto, sep=";", index=False)
     processados = tmp_path / "processed"
     monkeypatch.setattr(data_prep, "PROCESSED_DIR", processados)
+    monkeypatch.setattr(feature_store, "FEATURE_STORE_DIR", tmp_path / "feature_store")
     monkeypatch.setattr(data_prep, "download_raw", lambda force=False: caminho_bruto)
 
     resultado = data_prep.prepare()

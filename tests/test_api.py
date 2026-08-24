@@ -64,6 +64,9 @@ def test_recomendacao_retorna_oferta_e_evidencias(monkeypatch):
     assert corpo["recommended_arm"] == "cellular"
     assert corpo["posterior"]["cellular"]["mean_conversion"] > corpo["posterior"]["telephone"]["mean_conversion"]
     assert "revisão humana" in corpo["human_in_the_loop"]
+    assert corpo["explanation"]["recommended_arm"] == "cellular"
+    assert corpo["explanation"]["segment"] == "senior_sem_credito"
+    assert "média posterior" in corpo["explanation"]["reason"]
 
 
 def test_metrics_endpoint_expoe_prometheus_metrics():
