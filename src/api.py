@@ -8,16 +8,26 @@ Depois abra http://127.0.0.1:8000/docs
 """
 from __future__ import annotations
 
+import logging
+import os
+import sys
 import time
+import uuid
+from contextvars import ContextVar
 from pathlib import Path
 
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Request, Response
-from pydantic import BaseModel, Field
+from opentelemetry import trace
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
+from pydantic import BaseModel, ConfigDict, Field
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
 
 from src.bandits import ThompsonSampling, load_policy
 from src.data_prep import build_segment as build_segment_frame
+from src.governance import explain_decision
 
 ROOT = Path(__file__).resolve().parents[1]
 POLICY_PATH = ROOT / "models" / "thompson_sampling_contextual.json"
@@ -51,6 +61,42 @@ POLICY_EXPECTED_RATE = Gauge(
     labelnames=("arm", "segment"),
 )
 
+REQUEST_ID_CONTEXT: ContextVar[str] = ContextVar("request_id", default="n/a")
+
+
+class RequestIDFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.request_id = REQUEST_ID_CONTEXT.get()
+        return True
+
+
+def configure_observability() -> tuple[logging.Logger, object]:
+    logger = logging.getLogger("datathon.api")
+    logger.setLevel(getattr(logging, os.getenv("DATATHON_LOG_LEVEL", "INFO").upper(), logging.INFO))
+    if not logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(
+            logging.Formatter(
+                "%(asctime)s %(levelname)s datathon.api request_id=%(request_id)s %(message)s"
+            )
+        )
+        handler.addFilter(RequestIDFilter())
+        logger.addHandler(handler)
+    logger.propagate = False
+
+    resource = Resource.create({"service.name": "datathon-api", "service.version": "1.0.0"})
+    if not isinstance(trace.get_tracer_provider(), TracerProvider):
+        provider = TracerProvider(resource=resource)
+        if "pytest" not in sys.modules and "PYTEST_CURRENT_TEST" not in os.environ:
+            provider.add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))
+        trace.set_tracer_provider(provider)
+
+    tracer = trace.get_tracer("datathon.api")
+    return logger, tracer
+
+
+logger, tracer = configure_observability()
+
 app = FastAPI(
     title="Datathon - Recomendação Adaptativa de Ofertas",
     description="Thompson Sampling contextual treinado sobre a base Kaggle bank-marketing.",
@@ -58,6 +104,51 @@ app = FastAPI(
 )
 
 _policy: ThompsonSampling | None = None
+
+
+@app.middleware("http")
+async def observability_middleware(request: Request, call_next):
+    request_id = request.headers.get("x-request-id") or uuid.uuid4().hex
+    token = REQUEST_ID_CONTEXT.set(request_id)
+    started_at = time.perf_counter()
+    try:
+        with tracer.start_as_current_span("http.server.request") as span:
+            span.set_attribute("http.method", request.method)
+            span.set_attribute("http.route", request.url.path)
+            span.set_attribute("http.request_id", request_id)
+            try:
+                response = await call_next(request)
+            except Exception as exc:  # pragma: no cover - caminho coberto pela robustez do middleware
+                span.record_exception(exc)
+                span.set_attribute("error.type", type(exc).__name__)
+                logger.exception(
+                    "request_failed",
+                    extra={
+                        "method": request.method,
+                        "path": request.url.path,
+                        "status_code": 500,
+                        "latency_ms": round((time.perf_counter() - started_at) * 1000, 3),
+                        "request_id": request_id,
+                    },
+                )
+                raise
+
+            elapsed = time.perf_counter() - started_at
+            span.set_attribute("http.status_code", response.status_code)
+            span.set_attribute("http.response_time_ms", round(elapsed * 1000, 3))
+            logger.info(
+                "http_request_completed",
+                extra={
+                    "method": request.method,
+                    "path": request.url.path,
+                    "status_code": response.status_code,
+                    "latency_ms": round(elapsed * 1000, 3),
+                    "request_id": request_id,
+                },
+            )
+            return response
+    finally:
+        REQUEST_ID_CONTEXT.reset(token)
 
 
 @app.middleware("http")
@@ -90,8 +181,10 @@ def get_policy() -> ThompsonSampling:
 
 
 class Client(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     age: int = Field(..., ge=18, le=120, examples=[35])
-    job: str = Field("unknown", examples=["technician"])
+    job: str = Field("unknown", max_length=64, examples=["technician"])
     housing: str = Field("no", pattern="^(yes|no|unknown)$", examples=["yes"])
     loan: str = Field("no", pattern="^(yes|no|unknown)$", examples=["no"])
 
@@ -101,6 +194,7 @@ class Recommendation(BaseModel):
     recommended_arm: str
     expected_conversion_rate: float
     posterior: dict[str, dict[str, float]]
+    explanation: dict
     human_in_the_loop: str
 
 
@@ -115,9 +209,11 @@ def health() -> dict:
     try:
         get_policy()
         POLICY_LOADED.set(1)
+        logger.info("health_check_ok", extra={"policy_loaded": True})
         return {"status": "ok", "policy_loaded": True}
     except (HTTPException, OSError, ValueError, KeyError):
         POLICY_LOADED.set(0)
+        logger.warning("health_check_degraded", extra={"policy_loaded": False})
         return {"status": "degraded", "policy_loaded": False}
 
 
@@ -133,27 +229,46 @@ def recommend(client: Client) -> Recommendation:
     segment = build_segment(client)
     arm = policy.select_arm(segment)
 
-    posterior = {}
-    for a in policy.arms:
-        alpha, beta = policy.posterior(a, segment)
-        mean_conversion = alpha / (alpha + beta)
-        posterior[a] = {
-            "alpha": round(alpha, 1),
-            "beta": round(beta, 1),
-            "mean_conversion": round(mean_conversion, 4),
-        }
-        POLICY_EXPECTED_RATE.labels(a, segment).set(mean_conversion)
+    with tracer.start_as_current_span("recommendation.generate") as span:
+        span.set_attribute("segment", segment)
+        span.set_attribute("client_age", client.age)
+        span.set_attribute("arm_selected", arm)
 
-    RECOMMENDATION_COUNTER.labels(arm, segment).inc()
-    RECOMMENDATION_LATENCY.observe(time.perf_counter() - start)
+        posterior = {}
+        for a in policy.arms:
+            alpha, beta = policy.posterior(a, segment)
+            mean_conversion = alpha / (alpha + beta)
+            posterior[a] = {
+                "alpha": round(alpha, 1),
+                "beta": round(beta, 1),
+                "mean_conversion": round(mean_conversion, 4),
+            }
+            POLICY_EXPECTED_RATE.labels(a, segment).set(mean_conversion)
+            span.set_attribute(f"posterior.{a}.mean_conversion", mean_conversion)
 
-    return Recommendation(
-        segment=segment,
-        recommended_arm=arm,
-        expected_conversion_rate=posterior[arm]["mean_conversion"],
-        posterior=posterior,
-        human_in_the_loop=(
-            "Recomendação sujeita a revisão humana para decisões sensíveis, "
-            "conforme política de governança documentada no README."
-        ),
-    )
+        RECOMMENDATION_COUNTER.labels(arm, segment).inc()
+        RECOMMENDATION_LATENCY.observe(time.perf_counter() - start)
+
+        logger.info(
+            "recommendation_generated",
+            extra={
+                "segment": segment,
+                "recommended_arm": arm,
+                "expected_conversion_rate": posterior[arm]["mean_conversion"],
+                "latency_ms": round((time.perf_counter() - start) * 1000, 3),
+            },
+        )
+
+        result = Recommendation(
+            segment=segment,
+            recommended_arm=arm,
+            expected_conversion_rate=posterior[arm]["mean_conversion"],
+            posterior=posterior,
+            explanation=explain_decision(policy, segment, arm, posterior),
+            human_in_the_loop=(
+                "Recomendação sujeita a revisão humana para decisões sensíveis, "
+                "conforme política de governança documentada no README."
+            ),
+        )
+        span.set_attribute("recommendation.output", result.model_dump_json())
+        return result

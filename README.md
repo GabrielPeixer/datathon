@@ -48,15 +48,21 @@ Essa técnica verifica se as políticas mantêm desempenho em diferentes partes 
 │   └── 01_eda_e_bandits.ipynb   # Etapas 1-4: EDA, preparação, baseline vs. bandit, golden set
 ├── src/
 │   ├── data_prep.py             # Download, limpeza, features e segmentos
+│   ├── feature_store.py         # Feature view local + contrato de metadados
+│   ├── drift.py                 # Data drift (PSI e z-score) sobre a feature view
+│   ├── hyperparam_search.py     # Grade de hiperparâmetros com registro no MLflow
+│   ├── governance.py            # Contratos de segurança, viés e interpretabilidade
+│   ├── pipeline.py              # Esteira local: dados → drift → busca → treino
 │   ├── bandits.py               # Baseline, Epsilon-Greedy, Thompson Sampling + replay evaluation
 │   ├── train.py                 # Comparação de políticas com tracking no MLflow
 │   └── api.py                   # Etapa 5: serviço FastAPI de recomendação
 ├── models/                      # Estados (posteriores) das políticas treinadas
 ├── reports/
 │   └── experiment_summary.csv  # Evidência reproduzível das métricas do MLflow
-├── data/                        # raw/ e processed/ (gerados pelo pipeline)
+├── data/                        # raw/, processed/ e feature_store/ (gerados pelo pipeline)
+├── .github/workflows/ci.yml     # CI/CD de código, dados e treino
 ├── requirements.txt
-├── tests/                       # Testes de dados, políticas, serialização e API
+├── tests/                       # Testes de dados, políticas, NFR, drift e API
 └── README.md
 ```
 
@@ -101,6 +107,9 @@ uvicorn src.api:app --reload
 
 # 6. Testes automatizados
 pytest -q
+
+# 7. Esteira completa (dados + Feature Store + drift + hiperparâmetros + treino)
+python -m src.pipeline --raw-path tests/fixtures/bank_sample.csv --n-splits 3
 ```
 
 Exemplo de chamada à API:
@@ -139,20 +148,95 @@ A observabilidade seria feita com **CloudWatch** (logs, métricas de conversão 
 - **Métricas**: resultados de cada fold, médias de taxa de conversão, taxa de casamento, eventos casados e conversões, e desvios-padrão das taxas.
 - **Artefatos**: estado JSON das posteriores de cada política (usado pela API - o mesmo artefato treinado é o que serve).
 
-Além do backend local, o treinamento exporta [`reports/experiment_summary.csv`](reports/experiment_summary.csv), permitindo que a banca audite as métricas sem depender do banco SQLite local. O estado contextual servido pela API é mantido em [`models/thompson_sampling_contextual.json`](models/thompson_sampling_contextual.json), enquanto os demais estados podem ser regenerados pelo treinamento.
+Se [`reports/best_hyperparams.json`](reports/best_hyperparams.json) existir, `python -m src.train` reutiliza os hiperparâmetros escolhidos pela busca automática. Além do backend local, o treinamento exporta [`reports/experiment_summary.csv`](reports/experiment_summary.csv). O estado contextual servido pela API fica em [`models/thompson_sampling_contextual.json`](models/thompson_sampling_contextual.json).
 
-## Monitoramento com Prometheus
+## Feature Store e data drift
 
-A API expõe métricas em `/metrics` e inclui os seguintes sinais:
+`python -m src.data_prep` publica a feature view `campaign_context` em `data/feature_store/`: tabela corrente, schema, chaves de entidade (`segment`, `arm`) e estatísticas de referência. O contrato fica em `metadata.json`.
 
-- `datathon_http_requests_total`
-- `datathon_http_request_duration_seconds`
-- `datathon_recommendations_total`
-- `datathon_recommendation_latency_seconds`
-- `datathon_policy_loaded`
-- `datathon_policy_expected_conversion_rate`
+`python -m src.drift` compara um lote corrente com esse baseline:
 
-Arquivo de config: [`prometheus/prometheus.yml`](prometheus/prometheus.yml)
+- categóricas: Population Stability Index (alerta se PSI > 0,2)
+- numéricas: z-score da média (alerta se |z| > 3)
+
+O relatório é gravado em `reports/drift_report.json`. A esteira `python -m src.pipeline` publica a view, roda o drift e só então dispara busca + treino. Em CI, o job usa a fixture versionada [`tests/fixtures/bank_sample.csv`](tests/fixtures/bank_sample.csv) para não depender da UCI.
+
+## Seleção automática de hiperparâmetros
+
+`python -m src.hyperparam_search` percorre uma grade pequena e reproduzível:
+
+- Epsilon-Greedy: `epsilon ∈ {0,05, 0,1, 0,2}`
+- Thompson Sampling (global e contextual): priors `Beta(1,1)`, `Beta(2,2)` e `Beta(1,2)`
+
+Cada candidato é avaliado por validação cruzada offline, registrado no MLflow (`datathon-bandit-hyperparams`) e o vencedor por política vai para `reports/best_hyperparams.json`.
+
+## CI/CD
+
+O workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) tem dois jobs:
+
+1. **Código e NFR** - `pytest` de unidade, integração, segurança, viés e interpretabilidade.
+2. **Dados e treino** - esteira com a fixture local, busca de hiperparâmetros e upload de `drift_report.json`, `best_hyperparams.json` e `experiment_summary.csv`.
+
+## Testes não funcionais
+
+- **Segurança**: o contrato da API recusa campos extras/sensíveis (`extra=forbid`); a Feature Store só materializa o contexto minimizado.
+- **Viés**: `conversion_gap_by_segment` audita a disparidade de conversão entre segmentos.
+- **Interpretabilidade**: cada `/recommend` devolve `explanation` com posteriores Beta e o motivo da escolha no segmento.
+
+## Observabilidade e monitoramento
+
+A API agora inclui três camadas de observabilidade para apoiar diagnóstico rápido de falhas, latência e degradação de negócio.
+
+### 1) Logs estruturados
+
+A aplicação registra eventos de requisição e de decisão de recomendação com `request_id`, método, rota, status, latência e contexto do segmento e do braço recomendado. Isso permite correlacionar log, alerta e execução de negócio em uma única cadeia.
+
+Exemplos de eventos emitidos:
+
+- `http_request_completed`
+- `recommendation_generated`
+- `health_check_ok`
+- `health_check_degraded`
+
+A configuração do logger fica em [src/api.py](src/api.py), com saída em stdout na forma:
+
+```text
+2026-08-24 12:00:00,000 INFO datathon.api request_id=7d3f... http_request_completed method=POST path=/recommend status_code=200 latency_ms=12.4
+```
+
+### 2) Tracing com OpenTelemetry
+
+O projeto inicializa um `TracerProvider` e um span por requisição HTTP, além de um span específico para a geração da recomendação. Isso permite verificar:
+
+- rota e status HTTP
+- tempo de resposta
+- request_id
+- segmentação e braço recomendado
+- variáveis de posterior Beta na etapa de decisão
+
+A configuração usa exporter em console por simplicidade local, e pode ser ampliada para OTLP em produção. Em ambientes reais, basta apontar o exporter para um collector/Jaeger ou OTEL Collector.
+
+### 3) Alertas mais ricos e dashboards
+
+Os alertas em [prometheus/alerts.yml](prometheus/alerts.yml) foram expandidos para incluir:
+
+- indisponibilidade da API
+- taxa elevada de erro 5xx
+- latência de requisição alta
+- latência de recomendação alta
+- política carregada como indisponível
+- ausência de recomendações processadas
+- colapso de conversão esperada
+
+A dashboard de referência para Grafana está em [`monitoring/grafana/datathon_overview.json`](monitoring/grafana/datathon_overview.json). Ela expõe, em um painel único:
+
+- taxa de requisições por segundo
+- p95 de latência HTTP
+- taxa de erro 5xx
+- throughput de recomendações
+- estado da política contextual
+
+Arquivo de config do Prometheus: [`prometheus/prometheus.yml`](prometheus/prometheus.yml)
 Arquivo de alertas: [`prometheus/alerts.yml`](prometheus/alerts.yml)
 
 ```bash
@@ -167,7 +251,7 @@ docker run -d --name prometheus \
   prom/prometheus
 ```
 
-Acesse: `http://localhost:9090` e valide os alertas e targets.
+Acesse: `http://localhost:9090` para validar targets e alertas, e importei a dashboard em Grafana para acompanhar panos de disponibilidade, latência e negócio.
 
 ## Cobertura dos entregáveis (Etapas 0-7)
 
@@ -183,7 +267,7 @@ Acesse: `http://localhost:9090` e valide os alertas e targets.
 | 7 - MLOps | Tracking MLflow em `src/train.py`, resumo em `reports/` e Prometheus em `prometheus/` |
 
 ## Governança e uso responsável de dados
-
+Feature Store, drift, busca de hiperparâmetros, CI e Prometheus
 - **Base legal/finalidade**: dados públicos e anonimizados (UCI/Kaggle) usados exclusivamente para fins educacionais; nenhum dado real de cliente, identificador, renda, gênero ou raça é utilizado.
 - **Minimização**: o contexto usa apenas faixa etária e posse de produtos de crédito; colunas não usadas não saem do pipeline local.
 - **Retenção**: dados brutos e CSV processado ficam locais (ignorados no Git) e podem ser regenerados; somente o manifesto de versão é mantido no repositório.

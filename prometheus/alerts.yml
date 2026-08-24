@@ -19,6 +19,24 @@ groups:
           summary: "Latência alta da API"
           description: "O percentil 95 de latência da API está acima de 2 segundos."
 
+      - alert: DatathonHighErrorRate
+        expr: sum(rate(datathon_http_requests_total{status=~"5.."}[5m])) by (job) / sum(rate(datathon_http_requests_total[5m])) by (job) > 0.1
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Taxa alta de erros HTTP"
+          description: "Mais de 10% das requisições da API estão retornando erro 5xx nas últimas 5 minutos."
+
+      - alert: DatathonRecommendationLatencyHigh
+        expr: histogram_quantile(0.95, rate(datathon_recommendation_latency_seconds_bucket[5m])) > 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Latência de recomendação elevada"
+          description: "O tempo de processamento da recomendação está acima de 1 segundo para o percentil 95."
+
       - alert: DatathonPolicyDegraded
         expr: datathon_policy_loaded == 0
         for: 2m
@@ -26,7 +44,7 @@ groups:
           severity: warning
         annotations:
           summary: "Política de recomendação indisponível"
-          description: "A política contextual não foi carregada corretamente." 
+          description: "A política contextual não foi carregada corretamente."
 
       - alert: DatathonLowRecommendationRate
         expr: rate(datathon_recommendations_total[5m]) == 0
@@ -36,3 +54,12 @@ groups:
         annotations:
           summary: "Sem recomendações processadas"
           description: "A API não está recebendo ou processando recomendações no período recente."
+
+      - alert: DatathonPolicyConversionCollapse
+        expr: avg(datathon_policy_expected_conversion_rate) < 0.01
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Conversão esperada próxima de zero"
+          description: "A média das posteriores caiu abaixo de 1%, sinal possível de drift de recompensa."
