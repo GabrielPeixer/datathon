@@ -24,6 +24,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
       - name: Testes unitários, integração e NFR
+        env:
+          PYTHONPATH: .
         run: pytest -q tests/test_data_prep.py tests/test_bandits.py tests/test_train.py tests/test_api.py tests/test_feature_store.py tests/test_drift.py tests/test_hyperparams.py tests/test_nfr.py
 
   data-and-training:
