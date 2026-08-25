@@ -152,6 +152,10 @@ A observabilidade seria feita com **CloudWatch** (logs, métricas de conversão 
 
 ## Ciclo de vida MLOps (Etapa 7)
 
+A esteira `python -m src.pipeline` encadeia todas as etapas abaixo; o CI/CD roda o mesmo fluxo a cada push usando a fixture versionada.
+
+![Ciclo de vida MLOps](docs/images/mlops_pipeline.png)
+
 `python -m src.train` registra no **MLflow** (backend SQLite local, `mlflow.db`), para cada política:
 
 - **Parâmetros**: tipo de política, braços, `epsilon`, priors (`alpha`, `beta`), seed, dataset, nº de eventos e 5 folds de validação cruzada.
