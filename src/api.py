@@ -208,7 +208,10 @@ def build_segment(client: Client) -> str:
 
 @app.get("/", include_in_schema=False)
 def home() -> FileResponse:
-    return FileResponse(STATIC_DIR / "index.html")
+    return FileResponse(
+        STATIC_DIR / "index.html",
+        headers={"Cache-Control": "no-store, must-revalidate"},
+    )
 
 
 @app.get("/health")
