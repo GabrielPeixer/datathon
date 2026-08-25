@@ -26,6 +26,14 @@ def test_health_reflete_disponibilidade_do_modelo(monkeypatch, tmp_path):
     assert resposta.json() == {"status": "degraded", "policy_loaded": False}
 
 
+def test_frontend_e_servido_na_raiz():
+    resposta = client.get("/")
+
+    assert resposta.status_code == 200
+    assert resposta.headers["content-type"].startswith("text/html")
+    assert "Recomendação Adaptativa de Ofertas" in resposta.text
+
+
 @pytest.mark.parametrize("age", [17, 121])
 def test_recomendacao_rejeita_idade_fora_dos_limites(age):
     resposta = client.post(

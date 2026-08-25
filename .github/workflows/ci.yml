@@ -14,8 +14,8 @@ jobs:
       run:
         working-directory: .
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
           cache: pip
@@ -32,8 +32,8 @@ jobs:
     name: Dados, drift e treino
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
           cache: pip
@@ -50,7 +50,7 @@ jobs:
           DATATHON_RAW_CSV: tests/fixtures/bank_sample.csv
         run: python -m src.pipeline --raw-path tests/fixtures/bank_sample.csv --n-splits 3
       - name: Publicar relatórios
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: mlops-reports
           path: |
