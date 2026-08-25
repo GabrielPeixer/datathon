@@ -78,3 +78,10 @@ def test_metrics_endpoint_expoe_prometheus_metrics():
     assert "datathon_http_requests_total" in corpo
     assert "datathon_recommendations_total" in corpo
     assert "datathon_policy_loaded" in corpo
+
+
+def test_observabilidade_esta_configurada():
+    assert hasattr(api, "logger")
+    assert api.logger.name == "datathon.api"
+    assert hasattr(api, "tracer")
+    assert api.tracer is not None

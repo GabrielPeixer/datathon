@@ -6,6 +6,7 @@ Uso:
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import mlflow
@@ -36,25 +37,72 @@ def load_data() -> pd.DataFrame:
     return pd.read_csv(path)
 
 
-def create_policy(name: str, arms: list[str], training_df: pd.DataFrame, seed: int):
+DEFAULT_HYPERPARAMS = {
+    "epsilon_greedy": {"epsilon": 0.1},
+    "thompson_sampling": {"prior_alpha": 1.0, "prior_beta": 1.0},
+    "thompson_sampling_contextual": {"prior_alpha": 1.0, "prior_beta": 1.0},
+}
+
+
+def load_selected_hyperparams() -> dict:
+    """Usa o resultado da busca automática quando existir; senão, os defaults."""
+    path = REPORTS_DIR / "best_hyperparams.json"
+    if not path.exists():
+        return DEFAULT_HYPERPARAMS
+    selected = json.loads(path.read_text(encoding="utf-8"))
+    merged = {name: dict(values) for name, values in DEFAULT_HYPERPARAMS.items()}
+    for name, values in selected.items():
+        merged.setdefault(name, {}).update(
+            {
+                key: values[key]
+                for key in ("epsilon", "prior_alpha", "prior_beta")
+                if key in values
+            }
+        )
+    return merged
+
+
+def create_policy(
+    name: str,
+    arms: list[str],
+    training_df: pd.DataFrame,
+    seed: int,
+    hyperparams: dict | None = None,
+):
+    selected = dict(DEFAULT_HYPERPARAMS.get(name, {}))
+    if hyperparams:
+        selected.update(hyperparams)
     if name == "baseline_fixed":
         return BaselinePolicy(arms, fixed_arm="telephone", seed=seed)
     if name == "best_historical_arm":
         historical_best = training_df.groupby("arm")["converted"].mean().idxmax()
         return BaselinePolicy(arms, fixed_arm=historical_best, seed=seed)
     if name == "epsilon_greedy":
-        return EpsilonGreedy(arms, epsilon=0.1, seed=seed)
+        return EpsilonGreedy(arms, epsilon=float(selected.get("epsilon", 0.1)), seed=seed)
     if name == "thompson_sampling":
-        return ThompsonSampling(arms, prior_alpha=1.0, prior_beta=1.0, seed=seed)
+        return ThompsonSampling(
+            arms,
+            prior_alpha=float(selected.get("prior_alpha", 1.0)),
+            prior_beta=float(selected.get("prior_beta", 1.0)),
+            seed=seed,
+        )
     if name == "thompson_sampling_contextual":
         return ThompsonSampling(
-            arms, prior_alpha=1.0, prior_beta=1.0, contextual=True, seed=seed
+            arms,
+            prior_alpha=float(selected.get("prior_alpha", 1.0)),
+            prior_beta=float(selected.get("prior_beta", 1.0)),
+            contextual=True,
+            seed=seed,
         )
     raise ValueError(f"Política desconhecida: {name}")
 
 
 def cross_validate_policy(
-    name: str, arms: list[str], df: pd.DataFrame, n_splits: int = N_SPLITS
+    name: str,
+    arms: list[str],
+    df: pd.DataFrame,
+    n_splits: int = N_SPLITS,
+    hyperparams: dict | None = None,
 ) -> tuple[dict, list[dict]]:
     """Treina e avalia uma política em folds independentes de replay offline."""
     fold_metrics = []
@@ -63,7 +111,9 @@ def cross_validate_policy(
     for fold, (train_indices, validation_indices) in enumerate(splitter.split(df), start=1):
         training_df = df.iloc[train_indices]
         validation_df = df.iloc[validation_indices]
-        policy = create_policy(name, arms, training_df, seed=SEED + fold)
+        policy = create_policy(
+            name, arms, training_df, seed=SEED + fold, hyperparams=hyperparams
+        )
 
         replay_evaluation(policy, training_df)
         metrics = replay_evaluation(policy, validation_df, update_policy=False)
@@ -97,13 +147,12 @@ def run_experiments() -> pd.DataFrame:
         "thompson_sampling",
         "thompson_sampling_contextual",
     )
-
-    mlflow.set_tracking_uri(f"sqlite:///{(ROOT / 'mlflow.db').as_posix()}")
-    mlflow.set_experiment(EXPERIMENT_NAME)
-
+    selected_hyperparams = load_selected_hyperparams()
     results = []
     for name in policy_names:
-        policy = create_policy(name, arms, df, seed=SEED)
+        policy = create_policy(
+            name, arms, df, seed=SEED, hyperparams=selected_hyperparams.get(name)
+        )
         with mlflow.start_run(run_name=name):
             params = {
                 "policy": type(policy).__name__,
@@ -117,7 +166,9 @@ def run_experiments() -> pd.DataFrame:
             params.update({k: v for k, v in policy.state().items() if k in POLICY_PARAMS})
             mlflow.log_params(params)
 
-            logged, fold_metrics = cross_validate_policy(name, arms, df)
+            logged, fold_metrics = cross_validate_policy(
+                name, arms, df, hyperparams=selected_hyperparams.get(name)
+            )
             mlflow.log_metrics(logged)
             for metrics in fold_metrics:
                 fold = int(metrics["fold"])

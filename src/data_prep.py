@@ -54,9 +54,9 @@ def build_segment(df: pd.DataFrame) -> pd.Series:
     return (age_band + "_" + has_credit).rename("segment")
 
 
-def prepare(force_download: bool = False) -> pd.DataFrame:
+def prepare(force_download: bool = False, raw_path: str | Path | None = None) -> pd.DataFrame:
     """Preparação completa: download -> limpeza -> engenharia de features -> salvar."""
-    csv_path = download_raw(force=force_download)
+    csv_path = Path(raw_path) if raw_path else download_raw(force=force_download)
     df = pd.read_csv(csv_path, sep=";")
     raw_rows = len(df)
 
@@ -87,6 +87,9 @@ def prepare(force_download: bool = False) -> pd.DataFrame:
     (PROCESSED_DIR / "data_manifest.json").write_text(
         json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
     )
+    from src.feature_store import publish_features
+
+    publish_features(df)
     return df
 
 
