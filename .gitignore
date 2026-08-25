@@ -9,5 +9,9 @@ mlartifacts/
 mlflow.db
 data/raw/*
 data/processed/*.csv
+data/feature_store/
 models/*.json
 !models/thompson_sampling_contextual.json
+reports/drift_report.json
+reports/hyperparam_search.csv
+reports/best_hyperparams.json
