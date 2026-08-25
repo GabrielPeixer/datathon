@@ -126,6 +126,8 @@ O notebook das Etapas 1–4 pode ser aberto direto no Jupyter/VS Code: [notebook
 
 ### Deploy no Render
 
+**API em produção**: <https://datathon-api-nyia.onrender.com> (interface web na raiz, Swagger em [/docs](https://datathon-api-nyia.onrender.com/docs)).
+
 O repositório inclui um Blueprint [`render.yaml`](render.yaml) e uma imagem de produção enxuta. No painel do Render, escolha **New > Blueprint**, conecte este repositório e confirme a criação do serviço `datathon-api`. Não são necessárias variáveis de ambiente: o Render fornece `PORT` automaticamente e o artefato da política está versionado em `models/thompson_sampling_contextual.json`.
 
 Após o deploy, valide `GET /health` e abra `/docs`. O health check retorna HTTP 503 quando a política não pode ser carregada, impedindo que uma instância degradada receba tráfego.

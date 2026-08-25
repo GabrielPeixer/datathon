@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import FileResponse
 from opentelemetry import trace
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
@@ -31,6 +32,7 @@ from src.governance import explain_decision
 
 ROOT = Path(__file__).resolve().parents[1]
 POLICY_PATH = ROOT / "models" / "thompson_sampling_contextual.json"
+STATIC_DIR = ROOT / "static"
 
 REQUEST_COUNTER = Counter(
     "datathon_http_requests_total",
@@ -202,6 +204,11 @@ def build_segment(client: Client) -> str:
     """Deriva o segmento contextual reutilizando a mesma regra do treino."""
     row = pd.DataFrame([{"age": client.age, "loan": client.loan, "housing": client.housing}])
     return build_segment_frame(row).iloc[0]
+
+
+@app.get("/", include_in_schema=False)
+def home() -> FileResponse:
+    return FileResponse(STATIC_DIR / "index.html")
 
 
 @app.get("/health")

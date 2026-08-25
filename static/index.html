@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Datathon · Recomendação Adaptativa de Ofertas</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface-2: #1c2330;
+    --border: #2d3748;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --accent: #4f8cff;
+    --accent-2: #9d6bff;
+    --success: #3fb97c;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    background: radial-gradient(1200px 600px at 80% -10%, #1a2c50 0%, var(--bg) 55%);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 40px 16px;
+  }
+  header { text-align: center; margin-bottom: 32px; max-width: 720px; }
+  header h1 {
+    font-size: 1.9rem;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  header p { color: var(--muted); margin-top: 8px; font-size: .95rem; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    margin-top: 14px; padding: 4px 12px; border-radius: 999px;
+    border: 1px solid var(--border); font-size: .8rem; color: var(--muted);
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .dot.ok { background: var(--success); box-shadow: 0 0 8px var(--success); }
+  main {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 24px;
+    width: 100%; max-width: 960px;
+  }
+  @media (max-width: 800px) { main { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 28px;
+  }
+  .card h2 { font-size: 1.05rem; margin-bottom: 20px; }
+  label { display: block; font-size: .85rem; color: var(--muted); margin: 14px 0 6px; }
+  input, select {
+    width: 100%; padding: 10px 12px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--surface-2);
+    color: var(--text); font-size: .95rem; outline: none;
+  }
+  input:focus, select:focus { border-color: var(--accent); }
+  button {
+    margin-top: 22px; width: 100%; padding: 12px;
+    border: none; border-radius: 8px; cursor: pointer;
+    font-size: 1rem; font-weight: 600; color: #fff;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  }
+  button:disabled { opacity: .6; cursor: wait; }
+  .placeholder { color: var(--muted); font-size: .9rem; text-align: center; padding: 40px 0; }
+  .result-arm {
+    text-align: center; padding: 18px; border-radius: 10px;
+    background: var(--surface-2); border: 1px solid var(--border); margin-bottom: 18px;
+  }
+  .result-arm .arm { font-size: 1.7rem; font-weight: 700; color: var(--accent); text-transform: capitalize; }
+  .result-arm .rate { color: var(--success); font-size: .95rem; margin-top: 4px; }
+  .kv { display: flex; justify-content: space-between; font-size: .85rem; padding: 7px 0; border-bottom: 1px solid var(--border); }
+  .kv span:first-child { color: var(--muted); }
+  .bars { margin-top: 18px; }
+  .bar-row { margin-bottom: 12px; }
+  .bar-label { display: flex; justify-content: space-between; font-size: .8rem; color: var(--muted); margin-bottom: 4px; }
+  .bar-track { height: 8px; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--accent), var(--accent-2)); width: 0; transition: width .6s ease; }
+  .reason { margin-top: 18px; font-size: .82rem; color: var(--muted); line-height: 1.5; border-left: 3px solid var(--accent); padding-left: 12px; }
+  .error { color: #f47067; font-size: .88rem; text-align: center; padding: 30px 0; }
+  footer { margin-top: 32px; font-size: .8rem; color: var(--muted); }
+  footer a { color: var(--accent); text-decoration: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Recomendação Adaptativa de Ofertas</h1>
+  <p>Thompson Sampling contextual decide o melhor canal de contato para cada cliente, com base nas posteriores Beta aprendidas do histórico de campanhas.</p>
+  <span class="badge"><span id="health-dot" class="dot"></span><span id="health-text">verificando API…</span></span>
+</header>
+
+<main>
+  <section class="card">
+    <h2>Dados do cliente</h2>
+    <form id="form">
+      <label for="age">Idade</label>
+      <input id="age" type="number" min="18" max="120" value="35" required />
+
+      <label for="job">Profissão</label>
+      <select id="job">
+        <option value="admin.">Administrativo</option>
+        <option value="blue-collar">Operário</option>
+        <option value="entrepreneur">Empreendedor</option>
+        <option value="housemaid">Serviços domésticos</option>
+        <option value="management">Gerência</option>
+        <option value="retired">Aposentado</option>
+        <option value="self-employed">Autônomo</option>
+        <option value="services">Serviços</option>
+        <option value="student">Estudante</option>
+        <option value="technician" selected>Técnico</option>
+        <option value="unemployed">Desempregado</option>
+        <option value="unknown">Não informado</option>
+      </select>
+
+      <label for="housing">Financiamento imobiliário</label>
+      <select id="housing">
+        <option value="yes">Sim</option>
+        <option value="no" selected>Não</option>
+        <option value="unknown">Não informado</option>
+      </select>
+
+      <label for="loan">Empréstimo pessoal</label>
+      <select id="loan">
+        <option value="yes">Sim</option>
+        <option value="no" selected>Não</option>
+        <option value="unknown">Não informado</option>
+      </select>
+
+      <button id="submit" type="submit">Recomendar canal</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>Recomendação</h2>
+    <div id="output"><p class="placeholder">Preencha os dados e clique em “Recomendar canal”.</p></div>
+  </section>
+</main>
+
+<footer>
+  Documentação interativa em <a href="/docs">/docs</a> · métricas em <a href="/metrics">/metrics</a>
+</footer>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+async function checkHealth() {
+  try {
+    const r = await fetch("/health");
+    const ok = r.ok && (await r.json()).policy_loaded;
+    $("health-dot").className = "dot" + (ok ? " ok" : "");
+    $("health-text").textContent = ok ? "API online · política carregada" : "API degradada";
+  } catch {
+    $("health-text").textContent = "API indisponível";
+  }
+}
+checkHealth();
+
+$("form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = $("submit");
+  btn.disabled = true;
+  btn.textContent = "Consultando…";
+  try {
+    const body = {
+      age: Number($("age").value),
+      job: $("job").value,
+      housing: $("housing").value,
+      loan: $("loan").value,
+    };
+    const r = await fetch("/recommend", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    render(await r.json());
+  } catch (err) {
+    $("output").innerHTML = `<p class="error">Falha ao consultar a API (${err.message}).</p>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Recomendar canal";
+  }
+});
+
+function render(data) {
+  const pct = (v) => (v * 100).toFixed(2) + "%";
+  const arms = Object.entries(data.posterior);
+  const bars = arms.map(([arm, p]) => `
+    <div class="bar-row">
+      <div class="bar-label"><span>${arm}</span><span>${pct(p.mean_conversion)}</span></div>
+      <div class="bar-track"><div class="bar-fill" data-w="${p.mean_conversion * 100}"></div></div>
+    </div>`).join("");
+
+  $("output").innerHTML = `
+    <div class="result-arm">
+      <div class="arm">${data.recommended_arm}</div>
+      <div class="rate">conversão esperada de ${pct(data.expected_conversion_rate)}</div>
+    </div>
+    <div class="kv"><span>Segmento</span><span>${data.segment}</span></div>
+    <div class="kv"><span>Política</span><span>${data.explanation.policy}</span></div>
+    <div class="bars">${bars}</div>
+    <p class="reason">${data.explanation.reason}</p>
+  `;
+  requestAnimationFrame(() =>
+    document.querySelectorAll(".bar-fill").forEach((el) => (el.style.width = el.dataset.w + "%"))
+  );
+}
+</script>
+</body>
+</html>
