@@ -2,6 +2,8 @@
 
 Solução end-to-end de Machine Learning Engineering para decidir, de forma adaptativa, **qual canal/oferta apresentar a cada cliente elegível** usando *multi-armed bandits* (Thompson Sampling e Epsilon-Greedy) comparados a um baseline determinístico.
 
+🔗 **API em produção**: [datathon-api-nyia.onrender.com](https://datathon-api-nyia.onrender.com) · [Front-end](https://datathon-api-nyia.onrender.com/) · [Swagger /docs](https://datathon-api-nyia.onrender.com/docs) · [Métricas /metrics](https://datathon-api-nyia.onrender.com/metrics)
+
 ## Visão do problema
 
 Uma instituição financeira digital precisa escolher, em canais digitais, a melhor abordagem para cada cliente. Regras fixas desperdiçam tráfego e testes A/B longos demoram a reagir. A solução formula cada contato de campanha como uma decisão de bandit:
