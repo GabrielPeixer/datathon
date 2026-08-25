@@ -40,6 +40,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
       - name: Esteira com fixture versionada
+        env:
+          PYTHONPATH: .
         run: pytest -q tests/test_pipeline.py
       - name: Publicar feature view, drift e busca de hiperparâmetros
         env:
