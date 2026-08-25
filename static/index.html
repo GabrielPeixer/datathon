@@ -78,11 +78,20 @@
   .result-arm .rate { color: var(--success); font-size: .95rem; margin-top: 4px; }
   .kv { display: flex; justify-content: space-between; font-size: .85rem; padding: 7px 0; border-bottom: 1px solid var(--border); }
   .kv span:first-child { color: var(--muted); }
-  .bars { margin-top: 18px; }
-  .bar-row { margin-bottom: 12px; }
-  .bar-label { display: flex; justify-content: space-between; font-size: .8rem; color: var(--muted); margin-bottom: 4px; }
-  .bar-track { height: 8px; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
-  .bar-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--accent), var(--accent-2)); width: 0; transition: width .6s ease; }
+  .chart-wrap { display: flex; align-items: center; justify-content: center; gap: 24px; margin-top: 22px; flex-wrap: wrap; }
+  .donut { position: relative; width: 170px; height: 170px; }
+  .donut svg { transform: rotate(-90deg); }
+  .donut circle { fill: none; stroke-width: 22; stroke-linecap: butt; transition: stroke-dasharray .8s ease; }
+  .donut .track { stroke: var(--surface-2); }
+  .donut-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+  .donut-center .value { font-size: 1.35rem; font-weight: 700; color: var(--accent); }
+  .donut-center .label { font-size: .68rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-top: 2px; }
+  .legend { display: flex; flex-direction: column; gap: 10px; }
+  .legend-item { display: flex; align-items: center; gap: 10px; font-size: .85rem; }
+  .legend-item .swatch { width: 12px; height: 12px; border-radius: 4px; flex-shrink: 0; }
+  .legend-item .name { text-transform: capitalize; min-width: 80px; }
+  .legend-item .pct { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .legend-item.winner .name { color: var(--accent); font-weight: 600; }
   .reason { margin-top: 18px; font-size: .82rem; color: var(--muted); line-height: 1.5; border-left: 3px solid var(--accent); padding-left: 12px; }
   .error { color: #f47067; font-size: .88rem; text-align: center; padding: 30px 0; }
   footer { margin-top: 32px; font-size: .8rem; color: var(--muted); }
@@ -191,11 +200,29 @@ $("form").addEventListener("submit", async (e) => {
 
 function render(data) {
   const pct = (v) => (v * 100).toFixed(2) + "%";
-  const arms = Object.entries(data.posterior);
-  const bars = arms.map(([arm, p]) => `
-    <div class="bar-row">
-      <div class="bar-label"><span>${arm}</span><span>${pct(p.mean_conversion)}</span></div>
-      <div class="bar-track"><div class="bar-fill" data-w="${p.mean_conversion * 100}"></div></div>
+  const colors = ["#4f8cff", "#9d6bff", "#3fb97c", "#f2a65a"];
+  const arms = Object.entries(data.posterior)
+    .sort((a, b) => b[1].mean_conversion - a[1].mean_conversion);
+  const total = arms.reduce((s, [, p]) => s + p.mean_conversion, 0) || 1;
+
+  const R = 62, C = 2 * Math.PI * R;
+  let offset = 0;
+  const slices = arms.map(([arm, p], i) => {
+    const frac = p.mean_conversion / total;
+    const seg = `<circle class="slice" cx="85" cy="85" r="${R}"
+      stroke="${colors[i % colors.length]}"
+      stroke-dasharray="0 ${C}"
+      data-dash="${(frac * C).toFixed(2)} ${(C - frac * C).toFixed(2)}"
+      stroke-dashoffset="${(-offset * C).toFixed(2)}"></circle>`;
+    offset += frac;
+    return seg;
+  }).join("");
+
+  const legend = arms.map(([arm, p], i) => `
+    <div class="legend-item${arm === data.recommended_arm ? " winner" : ""}">
+      <span class="swatch" style="background:${colors[i % colors.length]}"></span>
+      <span class="name">${arm}${arm === data.recommended_arm ? " ★" : ""}</span>
+      <span class="pct">${pct(p.mean_conversion)} · ${(p.mean_conversion / total * 100).toFixed(1)}% do bolo</span>
     </div>`).join("");
 
   $("output").innerHTML = `
@@ -205,11 +232,23 @@ function render(data) {
     </div>
     <div class="kv"><span>Segmento</span><span>${data.segment}</span></div>
     <div class="kv"><span>Política</span><span>${data.explanation.policy}</span></div>
-    <div class="bars">${bars}</div>
+    <div class="chart-wrap">
+      <div class="donut">
+        <svg width="170" height="170" viewBox="0 0 170 170">
+          <circle class="track" cx="85" cy="85" r="${R}"></circle>
+          ${slices}
+        </svg>
+        <div class="donut-center">
+          <span class="value">${pct(data.expected_conversion_rate)}</span>
+          <span class="label">${data.recommended_arm}</span>
+        </div>
+      </div>
+      <div class="legend">${legend}</div>
+    </div>
     <p class="reason">${data.explanation.reason}</p>
   `;
   requestAnimationFrame(() =>
-    document.querySelectorAll(".bar-fill").forEach((el) => (el.style.width = el.dataset.w + "%"))
+    document.querySelectorAll(".slice").forEach((el) => (el.style.strokeDasharray = el.dataset.dash))
   );
 }
 </script>
