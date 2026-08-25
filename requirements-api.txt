@@ -1,0 +1,9 @@
+fastapi>=0.115,<1.0
+numpy>=2.0,<3.0
+opentelemetry-api>=1.31,<2.0
+opentelemetry-sdk>=1.31,<2.0
+pandas>=2.2,<3.0
+prometheus-client>=0.20,<1.0
+pydantic>=2.9,<3.0
+requests>=2.32,<3.0
+uvicorn>=0.32,<1.0

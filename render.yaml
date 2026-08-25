@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: datathon-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    autoDeploy: true

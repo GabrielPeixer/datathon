@@ -22,7 +22,7 @@ def test_health_reflete_disponibilidade_do_modelo(monkeypatch, tmp_path):
 
     resposta = client.get("/health")
 
-    assert resposta.status_code == 200
+    assert resposta.status_code == 503
     assert resposta.json() == {"status": "degraded", "policy_loaded": False}
 
 

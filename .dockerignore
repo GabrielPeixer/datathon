@@ -1,6 +1,8 @@
 .git
 .gitignore
+.github
 .venv
+.venv-1
 venv
 __pycache__
 *.pyc
@@ -10,3 +12,13 @@ __pycache__
 .mypy_cache
 .ipynb_checkpoints
 .DS_Store
+data
+mlflow.db
+mlruns
+monitoring
+notebooks
+prometheus
+reports
+tests
+models/*
+!models/thompson_sampling_contextual.json

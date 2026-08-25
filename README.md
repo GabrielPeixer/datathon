@@ -124,6 +124,12 @@ Resposta: braço recomendado, segmento, conversão esperada e posteriores Beta p
 
 O notebook das Etapas 1–4 pode ser aberto direto no Jupyter/VS Code: [notebooks/01_eda_e_bandits.ipynb](notebooks/01_eda_e_bandits.ipynb) (já executado, com outputs salvos).
 
+### Deploy no Render
+
+O repositório inclui um Blueprint [`render.yaml`](render.yaml) e uma imagem de produção enxuta. No painel do Render, escolha **New > Blueprint**, conecte este repositório e confirme a criação do serviço `datathon-api`. Não são necessárias variáveis de ambiente: o Render fornece `PORT` automaticamente e o artefato da política está versionado em `models/thompson_sampling_contextual.json`.
+
+Após o deploy, valide `GET /health` e abra `/docs`. O health check retorna HTTP 503 quando a política não pode ser carregada, impedindo que uma instância degradada receba tráfego.
+
 ## Golden Set - 5 casos de teste (Etapa 4)
 
 | Cliente | Segmento | Recomendação | Conversão esperada | Faz sentido? |

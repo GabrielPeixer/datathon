@@ -205,7 +205,7 @@ def build_segment(client: Client) -> str:
 
 
 @app.get("/health")
-def health() -> dict:
+def health(response: Response) -> dict:
     try:
         get_policy()
         POLICY_LOADED.set(1)
@@ -214,6 +214,7 @@ def health() -> dict:
     except (HTTPException, OSError, ValueError, KeyError):
         POLICY_LOADED.set(0)
         logger.warning("health_check_degraded", extra={"policy_loaded": False})
+        response.status_code = 503
         return {"status": "degraded", "policy_loaded": False}
 
 
