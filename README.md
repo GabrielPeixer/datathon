@@ -144,11 +144,18 @@ Após o deploy, valide `GET /health` e abra `/docs`. O health check retorna HTTP
 | C4 - sênior aposentado sem crédito | senior_sem_credito | cellular | 47,1% | ✔ melhor braço do segmento |
 | C5 - adulto operário com ambos créditos | adulto_com_credito | cellular | 12,2% | ✔ melhor braço do segmento |
 
-## Arquitetura-alvo em nuvem (Etapa 6 - AWS)
+## Arquitetura em produção (Etapa 6 - Render + CI/CD)
 
-Em produção na AWS, o serviço de recomendação (FastAPI) rodaria em contêiner no **ECS Fargate** atrás de um **Application Load Balancer** com **API Gateway**, com a imagem versionada no **ECR**. Os eventos de decisão e recompensa (impressão → conversão) seriam publicados no **Kinesis** e persistidos no **S3** (data lake versionado), enquanto o estado das posteriores dos bandits ficaria no **DynamoDB** para atualização online de baixa latência. O tracking de experimentos usaria **MLflow em EC2/ECS com backend RDS** e artefatos no S3.
+O serviço de recomendação (FastAPI) roda em produção como um **Web Service Docker no Render**, definido pelo Blueprint [`render.yaml`](render.yaml): plano `free`, build a partir do [`Dockerfile`](Dockerfile) na raiz do repositório e `healthCheckPath: /health`. O Render injeta a variável `PORT` automaticamente e o container sobe com `uvicorn src.api:app --host 0.0.0.0 --port ${PORT:-8000}`. Como o artefato da política ([`models/thompson_sampling_contextual.json`](models/thompson_sampling_contextual.json)) está versionado no Git, nenhum passo de treino é necessário no deploy - a imagem já sobe pronta para servir recomendações.
 
-A observabilidade seria feita com **CloudWatch** (logs, métricas de conversão por braço/segmento e alarmes de drift ou queda de recompensa), e a governança com **IAM** (menor privilégio), auditoria via **CloudTrail** e re-treino/reavaliação agendados via **Step Functions**. Decisões sensíveis passariam por fila de revisão humana (human-in-the-loop) antes da execução.
+O deploy é contínuo: com `autoDeploy: true`, o Render está conectado via GitHub ao repositório e reconstrói/publica automaticamente uma nova revisão a cada push em `master`/`main`, promovendo o novo container só depois que o health check em `/health` responde OK (evitando downtime ou instância degradada em produção).
+
+Em paralelo, o workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) do **GitHub Actions** roda em todo push e pull request para `master`/`main` com dois jobs independentes:
+
+1. **Código e testes não funcionais** - instala `requirements.txt` e roda `pytest` (unidade, integração, segurança, viés e interpretabilidade) sobre `src/`.
+2. **Dados e treino** - executa `python -m src.pipeline` com a fixture versionada [`tests/fixtures/bank_sample.csv`](tests/fixtures/bank_sample.csv) (Feature Store, drift, busca de hiperparâmetros e treino) e publica `drift_report.json`, `best_hyperparams.json`, `hyperparam_search.csv`, `experiment_summary.csv` e o `metadata.json` da feature view como artefatos do workflow.
+
+Hoje o CI do GitHub Actions valida o código e o pipeline de dados/treino a cada mudança, enquanto o deploy no Render é disparado de forma independente pela integração nativa do Render com o GitHub (não há um *gate* que bloqueie o deploy caso os testes falhem). Uma evolução natural seria condicionar o deploy à conclusão bem-sucedida do job de testes, por exemplo via `deploy hook` do Render chamado como um terceiro job do workflow.
 
 ## Ciclo de vida MLOps (Etapa 7)
 
@@ -277,7 +284,7 @@ Acesse: `http://localhost:9090` para validar targets e alertas, e importei a das
 | 3 - Baseline e adaptativos | Thompson Sampling, Epsilon-Greedy e baseline em `src/bandits.py` |
 | 4 - Avaliação e Golden Set | Métricas versionadas e cinco casos documentados acima |
 | 5 - Serviço demonstrável | FastAPI em `src/api.py` e artefato contextual versionado |
-| 6 - Arquitetura em nuvem | Arquitetura AWS descrita na seção anterior |
+| 6 - Arquitetura em nuvem | Deploy Docker no Render + CI/CD no GitHub Actions descritos na seção anterior |
 | 7 - MLOps | Tracking MLflow em `src/train.py`, resumo em `reports/` e Prometheus em `prometheus/` |
 
 ## Governança e uso responsável de dados
